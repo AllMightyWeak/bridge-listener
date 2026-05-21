@@ -38,11 +38,6 @@ type PolicyAttribCheckResult struct {
 	InvalidFmt []string // атрибуты, не прошедшие проверку формата (если включено)
 }
 
-const (
-	recipientDepartment = 1 // IT
-	recipientRole       = 1 // начальник (chief)
-)
-
 var erc20Abi = `[
 	{
 		"anonymous": false,
@@ -134,55 +129,37 @@ func printData(sub ethereum.Subscription, logs chan types.Log, parsedABI abi.ABI
 			fmt.Printf("	Address in Chain B: %s\n", event.AddressInChainB.Hex())
 			fmt.Printf("	Token URI: %s\n", event.TokenURIValue)
 
-			before, after, _ := strings.Cut(event.TokenURIValue, "?")
-			fmt.Println(before)
-			fmt.Println(after)
+			// before, after, _ := strings.Cut(event.TokenURIValue, "?")
 
-			encData, err := encryptionAbe.UnmarshalEncryptedDataFromString(before)
-			if err != nil {
-				log.Println("err unmarshaling tokenURI: ", err)
-			}
-
-			Check(encData, event, event.AddressInChainB.Hex())
-
-			// allow := map[string]bool{
-			// 	"2": true, // marketing
-			// 	"1": true, // it
-			// 	"0": true, // legal
-			// 	"9223372036854775803": true, // chief
-			// 	"9223372036854775804": true, // layer
-			// 	"9223372036854775805": true, // developer
-			// 	"9223372036854775806": true, // marketing specialist
-			// }
-			// res, err := CheckAttrs(encData.Cipher.Msp, allow, nil)
+			// encData, err := encryptionAbe.UnmarshalEncryptedDataFromString(before)
 			// if err != nil {
-			// 	log.Println("error checking attributes: ", err)
+			// 	log.Println("err unmarshaling tokenURI: ", err)
 			// }
-			// log.Println(res.InvalidFmt)
-			// log.Println(res.Unknown)
-			// log.Println(res.Used)
-			// if cap(res.InvalidFmt) == 0 && cap(res.Unknown) == 0 && cap(res.Used) == cap(encData.Cipher.Msp.RowToAttrib) {
-			// 	client := conn.ConnectToWebSocket(os.Getenv("WEBSOCKET"))
-			// 	auth := conn.GetAccountAuth(client, os.Getenv("PRIVATE_KEY_BRIDGE")) // wallet private key
-			// 	conn, err := contract.NewWnft(common.HexToAddress(os.Getenv("WNFT_ADDR")), client) // nft contract address
-			// 	if err != nil {
-			// 		panic(err)
-			// 	}
-			// 	tx, err := conn.CreateToken(auth, common.HexToAddress(event.AddressInChainB.Hex()), event.TokenURIValue)
-			// 	if err != nil {
-			// 		log.Panic("error minting wrapped token: ", err)
-			// 	}
-			// 	fmt.Println("Hash: ", tx.Hash().Hex())
-			// 	fmt.Println("To: ", tx.To())
-			// } else {
-			// 	fmt.Println("No wNFT mint allowed")
-			// }
+			sendToReceiverChain(event)
+			// CheckAndSendToReceiverChain(encData, event, event.AddressInChainB.Hex())
 		}
 	}
 }
 
-func Check(encData encryptionAbe.EncryptedData, event TransferEvent, reciever string) {
-	ok, err := CheckRecipient(encData.Cipher.Msp, reciever)
+func sendToReceiverChain(event TransferEvent) {
+	client := conn.ConnectToWebSocket(os.Getenv("WEBSOCKET"))
+	auth := conn.GetAccountAuth(client, os.Getenv("PRIVATE_KEY_BRIDGE")) // wallet private key
+
+	conn, err := contract.NewWnft(common.HexToAddress(os.Getenv("WNFT_ADDR")), client) // nft contract address
+	if err != nil {
+		panic(err)
+	}
+
+	tx, err := conn.CreateToken(auth, common.HexToAddress(event.AddressInChainB.Hex()), event.TokenURIValue)
+	if err != nil {
+		log.Panic("error minting wrapped token: ", err)
+	}
+	fmt.Println("Hash: ", tx.Hash().Hex())
+	fmt.Println("To: ", tx.To())
+}
+
+func checkAndSendToReceiverChain(encData encryptionAbe.EncryptedData, event TransferEvent, reciever string) {
+	ok, err := checkRecipient(encData.Cipher.Msp, reciever)
 	if err != nil {
 		log.Println("error checking recipient:", err)
 		fmt.Println("BLOCK")
@@ -208,7 +185,7 @@ func Check(encData encryptionAbe.EncryptedData, event TransferEvent, reciever st
 	}
 }
 
-func CheckRecipient(msp *abe.MSP, recipientAddress string) (bool, error) {
+func checkRecipient(msp *abe.MSP, recipientAddress string) (bool, error) {
 	if msp == nil {
 		return false, fmt.Errorf("nil msp")
 	}
@@ -219,7 +196,7 @@ func CheckRecipient(msp *abe.MSP, recipientAddress string) (bool, error) {
 		return false, fmt.Errorf("Mat/RowToAttrib length mismatch")
 	}
 
-	recipient, err := LoadRecipientAttrs("", recipientAddress)
+	recipient, err := loadRecipientAttrs("", recipientAddress)
 	if err != nil {
 		return false, fmt.Errorf("load recipient attrs: %w", err)
 	}
@@ -254,7 +231,7 @@ func CheckRecipient(msp *abe.MSP, recipientAddress string) (bool, error) {
 	return solvableModP(aug, len(rows), p), nil
 }
 
-func LoadRecipientAttrs(envPath, address string) (map[string]bool, error) {
+func loadRecipientAttrs(envPath, address string) (map[string]bool, error) {
 	if envPath == "" {
 		envPath = ".env"
 	}
