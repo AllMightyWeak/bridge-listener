@@ -19,5 +19,4 @@ func main() {
 	fmt.Println("Listener started")
 	fmt.Println()
 	listener.EthereumListener()
-
 }
